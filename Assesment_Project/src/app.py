@@ -35,8 +35,8 @@ def initialize_session_state():
         st.session_state.extraction_history = []
     if 'custom_fields' not in st.session_state:
         st.session_state.custom_fields = []
-    if 'custom_fields_list' not in st.session_state:
-        st.session_state.custom_fields_list = []
+    if 'selected_fields' not in st.session_state:
+        st.session_state.selected_fields = DEFAULT_FIELDS.copy()
 
 def initialize_app():
     st.title("Advanced AI Data Extraction Tool")
@@ -93,51 +93,27 @@ def handle_web_search_controls(df):
     
     return enable_web_search, search_intensity, search_columns
 
-def handle_sidebar_controls(df, primary_columns):
-    prompt_tabs = st.sidebar.radio("Choose Prompt Type", ["Generate Prompt", "Custom Prompt"])
-
-    if prompt_tabs == "Generate Prompt":
-        prompt = handle_generate_prompt_sidebar(df, primary_columns)
-    else:
-        prompt = handle_custom_prompt_sidebar(df)
-
-    return prompt
-
 def handle_generate_prompt_sidebar(df, primary_columns):
+    # Combined field selection including both default and custom fields
     selected_fields = st.sidebar.multiselect(
         "Select fields to extract",
-        DEFAULT_FIELDS,
-        default=["Email", "Phone"],
+        st.session_state.selected_fields,
+        default=st.session_state.selected_fields,
         key="fields_select"
     )
 
-    # Add custom fields section
-    st.sidebar.subheader("Add Custom Fields")
-    
-    # Text input for new custom field
-    new_custom_field = st.sidebar.text_input("Enter new custom field", key="new_custom_field")
-    
-    # Add button for custom field
-    if st.sidebar.button("Add Custom Field"):
-        if new_custom_field and new_custom_field not in st.session_state.custom_fields_list:
-            st.session_state.custom_fields_list.append(new_custom_field)
-            selected_fields.append(new_custom_field)
-
-    # Display and manage custom fields
-    if st.session_state.custom_fields_list:
-        st.sidebar.subheader("Current Custom Fields")
-        for idx, field in enumerate(st.session_state.custom_fields_list):
-            col1, col2 = st.sidebar.columns([3, 1])
-            with col1:
-                st.write(field)
-            with col2:
-                if st.button("Remove", key=f"remove_{idx}"):
-                    st.session_state.custom_fields_list.remove(field)
-                    if field in selected_fields:
-                        selected_fields.remove(field)
+    # Update the session state with the current selection
+    st.session_state.selected_fields = selected_fields
 
     if not selected_fields:
         st.sidebar.warning("Please select at least one field to extract.")
+
+    # Text input for new custom field (moved after "Select fields to extract")
+    new_custom_field = st.sidebar.text_input("Add new field", key="new_custom_field")
+    add_field = st.sidebar.button("Add Field")
+
+    if add_field and new_custom_field and new_custom_field not in st.session_state.selected_fields:
+        st.session_state.selected_fields.append(new_custom_field)
 
     if primary_columns and selected_fields:
         prompt = f"Get me the {', '.join([f'{{{field}}}' for field in selected_fields])} for {', '.join([f'{{{col}}}' for col in primary_columns])}."
@@ -146,6 +122,16 @@ def handle_generate_prompt_sidebar(df, primary_columns):
 
     if st.sidebar.checkbox("Show Prompt Preview", key="generate_prompt_preview_checkbox"):
         st.sidebar.text_area("Generated Prompt", prompt, disabled=True, key="generate_prompt_preview")
+
+    return prompt
+
+def handle_sidebar_controls(df, primary_columns):
+    prompt_tabs = st.sidebar.radio("Choose Prompt Type", ["Generate Prompt", "Custom Prompt"])
+
+    if prompt_tabs == "Generate Prompt":
+        prompt = handle_generate_prompt_sidebar(df, primary_columns)
+    else:
+        prompt = handle_custom_prompt_sidebar(df)
 
     return prompt
 
