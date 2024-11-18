@@ -42,9 +42,12 @@ The **AI Assessment Project** is an intuitive application designed to process da
 
 ### Prerequisites
 - Python 3.7 or higher
+- Groq API Key
+- Google Sheets API Credentials
+- SerpAPI Key (for web search enhancement)
 - Virtual Environment (recommended)
 
-### Steps
+### Installation
 1. Clone the repository:
    ```bash
    git clone https://github.com/Prishasophat/Assesment_Project.git
@@ -116,7 +119,6 @@ Assesment_Project/
 ├── requirements.txt     # Python dependencies
 ├── .env                 # Environment variables (ignored in Git)
 ├── README.md            # Project documentation
-
 
 
 
