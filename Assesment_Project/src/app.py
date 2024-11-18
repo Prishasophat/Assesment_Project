@@ -12,10 +12,12 @@ from utils.ai_helpers import (
     batch_process_with_groq,
     format_extraction_prompt
 )
+from utils.web_search import perform_web_search
 
 # Configuration and Constants
 load_dotenv()
 groq_api_key = os.getenv("GROQ_API_KEY")
+serpapi_key = os.getenv("SERPAPI_KEY")
 client = Groq(api_key=groq_api_key)
 
 QUERY_TEMPLATES = {
@@ -33,6 +35,8 @@ def initialize_session_state():
         st.session_state.extraction_history = []
     if 'custom_fields' not in st.session_state:
         st.session_state.custom_fields = []
+    if 'custom_fields_list' not in st.session_state:
+        st.session_state.custom_fields_list = []
 
 def initialize_app():
     st.title("Advanced AI Data Extraction Tool")
@@ -58,7 +62,6 @@ def handle_data_source():
     return df, source_type, sheet_url
 
 def handle_column_selection(df):
-    # This section handles the column selection, which is above the tabs
     st.sidebar.header("Column Selection")
     primary_columns = st.sidebar.multiselect(
         "Select Entity Columns",
@@ -67,8 +70,30 @@ def handle_column_selection(df):
     )
     return primary_columns
 
+def handle_web_search_controls(df):
+    st.sidebar.header("Web Search Settings")
+    enable_web_search = st.sidebar.checkbox("Enable Web Search Enhancement")
+    search_intensity = None
+    search_columns = None
+    
+    if enable_web_search:
+        search_intensity = st.sidebar.slider(
+            "Search Intensity",
+            min_value=1,
+            max_value=10,
+            value=5,
+            help="Higher values will perform more detailed web searches"
+        )
+        
+        search_columns = st.sidebar.multiselect(
+            "Select Columns for Web Search",
+            df.columns if df is not None else [],
+            help="Select specific columns to focus the web search on"
+        )
+    
+    return enable_web_search, search_intensity, search_columns
+
 def handle_sidebar_controls(df, primary_columns):
-    # This section handles the prompt selection and column-based functionality
     prompt_tabs = st.sidebar.radio("Choose Prompt Type", ["Generate Prompt", "Custom Prompt"])
 
     if prompt_tabs == "Generate Prompt":
@@ -79,7 +104,6 @@ def handle_sidebar_controls(df, primary_columns):
     return prompt
 
 def handle_generate_prompt_sidebar(df, primary_columns):
-    # Standard fields selection for Generate Prompt
     selected_fields = st.sidebar.multiselect(
         "Select fields to extract",
         DEFAULT_FIELDS,
@@ -87,18 +111,34 @@ def handle_generate_prompt_sidebar(df, primary_columns):
         key="fields_select"
     )
 
-    # Allow the user to add custom fields in "Generate Prompt"
-    custom_field = st.sidebar.text_input("Add Custom Field", key="custom_field_input")
-    if custom_field:
-        if custom_field not in selected_fields:
-            selected_fields.append(custom_field)
-            st.session_state['custom_fields'].append(custom_field)  # Add to session state
+    # Add custom fields section
+    st.sidebar.subheader("Add Custom Fields")
+    
+    # Text input for new custom field
+    new_custom_field = st.sidebar.text_input("Enter new custom field", key="new_custom_field")
+    
+    # Add button for custom field
+    if st.sidebar.button("Add Custom Field"):
+        if new_custom_field and new_custom_field not in st.session_state.custom_fields_list:
+            st.session_state.custom_fields_list.append(new_custom_field)
+            selected_fields.append(new_custom_field)
 
-    # Ensure that selected fields are not empty
+    # Display and manage custom fields
+    if st.session_state.custom_fields_list:
+        st.sidebar.subheader("Current Custom Fields")
+        for idx, field in enumerate(st.session_state.custom_fields_list):
+            col1, col2 = st.sidebar.columns([3, 1])
+            with col1:
+                st.write(field)
+            with col2:
+                if st.button("Remove", key=f"remove_{idx}"):
+                    st.session_state.custom_fields_list.remove(field)
+                    if field in selected_fields:
+                        selected_fields.remove(field)
+
     if not selected_fields:
         st.sidebar.warning("Please select at least one field to extract.")
 
-    # Generate a simplified prompt with curly braces for placeholders
     if primary_columns and selected_fields:
         prompt = f"Get me the {', '.join([f'{{{field}}}' for field in selected_fields])} for {', '.join([f'{{{col}}}' for col in primary_columns])}."
     else:
@@ -109,9 +149,7 @@ def handle_generate_prompt_sidebar(df, primary_columns):
 
     return prompt
 
-
 def handle_custom_prompt_sidebar(df):
-    # Custom prompt text area for user input
     available_columns = list(df.columns) if df is not None and len(df.columns) > 0 else []
     custom_prompt = st.text_area(
         "Write your custom prompt here:",
@@ -128,20 +166,29 @@ def handle_custom_prompt_sidebar(df):
 
     return custom_prompt
 
-def process_data_with_advanced_features(df, prompt_template, columns):
+def process_data_with_advanced_features(df, prompt_template, columns, enable_web_search=False, search_intensity=5, search_columns=None):
     try:
         if not columns:
             st.error("Please select at least one column before processing")
             return None
 
         with st.spinner("Processing data..."):
-            # Prepare data with column values
             processed_data = []
             for _, row in df.iterrows():
                 data_dict = {col: row[col] for col in columns}
+                
+                # Enhance with web search if enabled
+                if enable_web_search and serpapi_key:
+                    # Use selected search columns if specified, otherwise use primary columns
+                    columns_to_search = search_columns if search_columns else columns
+                    search_query = " ".join([str(row[col]) for col in columns_to_search])
+                    web_results = perform_web_search(search_query, serpapi_key)
+                    # Adjust search depth based on intensity
+                    web_context = web_results.get('organic_results', [])[:search_intensity]
+                    data_dict['web_context'] = web_context
+                
                 processed_data.append(data_dict)
 
-            # Process with enhanced prompt
             results = batch_process_with_groq(
                 processed_data,
                 prompt_template,
@@ -161,7 +208,6 @@ def process_data_with_advanced_features(df, prompt_template, columns):
 def display_results(results_df):
     st.success("Information successfully extracted!")
 
-    # Download buttons
     col1, col2 = st.columns(2)
     with col1:
         st.download_button(
@@ -186,15 +232,12 @@ def display_results(results_df):
             try:
                 info = row['Extracted_Information']
                 if isinstance(info, str):
-                    # Clean up the extracted text
                     info = info.replace('{"extracted_text":"', '').rstrip('}')
-                    # Split into sections if present
                     sections = info.split('\n\n')
                     for section in sections:
                         if section.strip():
                             st.write(section.strip())
                 else:
-                    # Handle structured data
                     for key, value in info.items():
                         st.markdown(f"**:green[{key}]:**")
                         st.write(value)
@@ -204,35 +247,38 @@ def display_results(results_df):
 def main():
     initialize_session_state()
 
-    # Title Section
     st.title("Advanced AI Data Extraction Tool")
     st.write("Upload your data and extract intelligent insights using AI.")
 
-    # Data Loading Section
     df, source_type, sheet_url = handle_data_source()
 
     if df is not None:
-        # Data Preview Section
         st.header("Preview of uploaded data")
         st.dataframe(df.head(), use_container_width=True)
 
-        # Column Selection above the tabs
         primary_columns = handle_column_selection(df)
+        
+        # Add web search controls with column selection
+        enable_web_search, search_intensity, search_columns = handle_web_search_controls(df)
 
-        # Processing Section
         prompt = handle_sidebar_controls(df, primary_columns)
 
-        # Process Data Button
         if st.button("Process Data", key="process_data_button", use_container_width=True):
             if not primary_columns:
                 st.error("Please select at least one column before processing")
             else:
-                results_df = process_data_with_advanced_features(df, prompt, primary_columns)
+                results_df = process_data_with_advanced_features(
+                    df, 
+                    prompt, 
+                    primary_columns,
+                    enable_web_search,
+                    search_intensity,
+                    search_columns
+                )
 
                 if results_df is not None:
                     display_results(results_df)
 
-                    # Google Sheets Integration
                     if source_type == "Google Sheets":
                         col1, col2, col3 = st.columns([1, 2, 1])
                         with col2:
