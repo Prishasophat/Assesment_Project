@@ -25,12 +25,16 @@ The **AI Assessment Project** is an intuitive application designed to process da
 
 ---
 
-## ✨ Features
-- 📂 Upload CSV files effortlessly.
-- 🌐 Link and process Google Sheets in real-time.
-- 🔍 Preview datasets with a clean and responsive UI.
-- ✏️ Generate prompts or create custom prompts for analysis.
-- 🛠️ Export processed data in JSON or CSV format.
+## Features
+
+- 🤖 AI-Powered Data Extraction using Groq API
+- 📊 Google Sheets Integration
+- 📁 CSV File Support
+- 🔍 Web Search Enhancement
+- 🎯 Custom Field Extraction
+- 📝 Multiple Query Templates
+- 💾 Multiple Export Formats
+- 🔄 Batch Processing Capabilities
 
 ---
 
